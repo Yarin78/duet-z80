@@ -154,42 +154,40 @@ drawfigurexy:
   push hl
   push de
 
-  push bc
-  ld de,linebuffer
-  ; HL -> current position in figure
-  ldi
-  ldi
-  ldi
-  ldi
-  xor a
-  ld (de),a
-  pop bc
-  ; C = x coordinate
   ld a,c
   and 7
-  jr z,.norotate
-  ld b,a
-  ld hl,linebuffer
-  ; Figure row is now in linebuffer
-  ; Now we rotate it to the right place
-  ; rotate (hl), (hl+1), ..., (hl+4) B bits
-  ; TODO: Use rotation lookup table here so the speed doesn't depend on amount of rotates
-.rotate:
-  srl (hl)
+  ld b,a ; B = number of times to rotate
+  ; TODO - if B > 3, rotate left
+  ld c,(hl)
   inc hl
-  rr (hl)
+  ld d,(hl)
   inc hl
-  rr (hl)
+  ld e,(hl)
   inc hl
-  rr (hl)
-  inc hl
-  rr (hl)
+  ld h,(hl)
+  ld l,0
+  jr z,.norotatefast
+.rotatefast:
+  srl c
+  rr d
+  rr e
+  rr h
+  rr l
+  djnz .rotatefast
+.norotatefast:
+  ld a,l
+  ld b,h
+  ld hl,linebuffer+4
+  ld (hl),a
   dec hl
+  ld (hl),b
   dec hl
+  ld (hl),e
   dec hl
+  ld (hl),d
   dec hl
-  djnz .rotate
-.norotate:
+  ld (hl),c
+
   ; Now copy (OR) linebuffer to drawing buffer
   ; We always copy 5 bytes, but at some point we need to reset
   ; pointer in drawing buffer to the beginning of the line
@@ -247,7 +245,8 @@ drawfigurexy:
   ; HL -> next line in figure
   pop bc
   ; B = rows left
-  djnz .processrow
+  dec b ; TODO change back to djnz if possible
+  jp nz,.processrow
   ret
 
 ; Z will be set if DE=HL, C set if DE<HL
