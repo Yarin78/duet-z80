@@ -27,24 +27,24 @@ test_static:
   ld b,0
   ld c,3
   ld de,gfxbuffer+0x0000
-  call drawbuffer2
+  call drawbuffer
 
   ld b,5
   ld c,1
   ld de,gfxbuffer+4
-  call drawbuffer2
+  call drawbuffer
 
   ld b,5
   ld c,1
   ld de,gfxbuffer+256
-  call drawbuffer2
+  call drawbuffer
 
   ld b,7
   ld c,2
   ld de,gfxbuffer+256+4
-  call drawbuffer2
+  call drawbuffer
 
-  call flushbuffer2
+  call flushbuffer
   ret
 
 main_bg_loop:
@@ -58,7 +58,7 @@ main_bg_loop:
   push hl
   ld c,(hl)
   ld de,gfxbuffer
-  call drawbuffer2
+  call drawbuffer
   pop hl
   pop bc
   inc b
@@ -67,33 +67,14 @@ main_bg_loop:
   jr z,.skip
   ld hl,size_wave
 .skip:
-  call flushbuffer2
+  call flushbuffer
 
   call CHSNS
   jr z,.mainloop
   ret
 
+
 drawbuffer:
-  ; B = rotation frame (lower 4 bits will be used)
-  ; C = size (0-3)
-  ; DE = position in drawing buffer
-  call get_figure_ptr
-
-  ld b,4
-.dbloop:
-  push bc
-  ld bc,32
-  ldir
-  ex de,hl
-  ld bc,4*8
-  add hl,bc
-  ex de,hl
-  pop bc
-  djnz .dbloop
-
-  ret
-
-drawbuffer2:
   ; B = rotation frame (lower 4 bits will be used)
   ; C = size (0-3)
   ; DE = position in drawing buffer
@@ -139,27 +120,6 @@ flushbuffer:
   ld hl,0x0000
   call set_vdp_write_addr
   ld hl,gfxbuffer
-  ; copy 8x8x8 = 512 bytes
-  ld d,2
-  ld b,0
-  ld c,VDP_DW
-.fb_loop:
-  outi
-  jr nz,.fb_loop
-  dec d
-  jr nz,.fb_loop
-  pop hl
-  pop de
-  pop bc
-  ret
-
-flushbuffer2:
-  push bc
-  push de
-  push hl
-  ld hl,0x0000
-  call set_vdp_write_addr
-  ld hl,gfxbuffer
   ld c,VDP_DW
   ld a,8 ; 8 rows
 .fb2_nextrow:
@@ -192,30 +152,6 @@ flushbuffer2:
   pop hl
   pop de
   pop bc
-  ret
-
-draw:
-  ; B = rotation frame (lower 4 bits will be used)
-  ; C = size (0-3)
-  ; DE = vram address of first character pattern
-  call get_figure_ptr
-  ex de,hl
-
-  ld b,4
-.dloop:
-  push bc
-  call set_vdp_write_addr
-  ex de,hl
-  call draw_tile
-  call draw_tile
-  call draw_tile
-  call draw_tile
-  ex de,hl
-  ld bc,8*8
-  add hl,bc
-  pop bc
-  djnz .dloop
-
   ret
 
 get_figure_ptr:
