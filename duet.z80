@@ -26,23 +26,27 @@ start:
 test_static:
   ld b,0
   ld c,3
-  ld de,gfxbuffer+0x0000
-  call drawbuffer
+  ld d,0
+  ld e,0
+  call drawfigurexy
+
+  ld b,0
+  ld c,3
+  ld d,32
+  ld e,5
+  call drawfigurexy
 
   ld b,5
   ld c,1
-  ld de,gfxbuffer+4
-  call drawbuffer
-
-  ld b,5
-  ld c,1
-  ld de,gfxbuffer+256
-  call drawbuffer
+  ld d,0
+  ld e,48
+  call drawfigurexy
 
   ld b,7
   ld c,2
-  ld de,gfxbuffer+256+4
-  call drawbuffer
+  ld d,32
+  ld e,32
+  call drawfigurexy
 
   call flushbuffer
   ret
@@ -50,15 +54,21 @@ test_static:
 main_bg_loop:
   ld b,0
   ld hl,size_wave
+  ld d,7
+  ld e,7
+  ;ld de,gfxbuffer
+
 .mainloop:
   call clearbuffer
-  halt
-  halt
+  ;halt
+  ;halt
   push bc
   push hl
   ld c,(hl)
-  ld de,gfxbuffer
-  call drawbuffer
+  push de
+  call drawfigurexy
+  ;call drawbuffer
+  pop de
   pop hl
   pop bc
   inc b
@@ -68,11 +78,157 @@ main_bg_loop:
   ld hl,size_wave
 .skip:
   call flushbuffer
+  ;inc e
 
   call CHSNS
   jr z,.mainloop
   ret
 
+drawfigurexy:
+  ; B = rotation frame (lower 4 bits will be used)
+  ; C = size (0-3)
+  ; D,E = x,y coordinates in drawing buffer
+  call get_figure_ptr
+  ; now HL -> figure to draw
+  ld a,e
+  and 63
+  ld e,a
+  ld a,d
+  and 63
+  ex de,hl
+  ld h,0 ; HL is now y coordinate in buffer to draw to
+  add hl,hl
+  add hl,hl
+  add hl,hl
+  ld bc,gfxbuffer
+  add hl,bc
+  ex de,hl
+  ; HL -> figure to draw
+  ; DE -> beginning of first row in buffer to draw to
+  ; A = x coordinate
+
+  ld b,32
+  ld c,a
+
+.processrow:
+  ; B rows left
+  ; HL -> current position in figure
+  ; DE -> beginning of row in buffer
+  ; C = x offset
+  push bc
+  push hl
+  push de
+  ; TODO: Should only have to clear one byte (+4) in the line buffer every row
+  call clearlinebuffer
+
+  push bc
+  ex de,hl
+  ld hl,linebuffer
+  ld b,0
+  srl c
+  srl c
+  srl c
+  add hl,bc
+  ex de,hl
+  ; DE -> linebuffer+x/8
+  ; HL -> current position in figure
+  push de
+  ldi
+  ldi
+  ldi
+  ldi
+  pop hl
+  pop bc
+  ; C = x coordinate
+  ld a,c
+  and 7
+  jr z,.norotate
+  ld b,a
+  ; Figure row is now in linebuffer
+  ; Now we rotate it to the right place
+  ; rotate (hl), (hl+1), ..., (hl+4) B bits
+  ; TODO: Use rotation lookup table here so the speed doesn't depend on amount of rotates
+.rotate:
+  srl (hl)
+  inc hl
+  rr (hl)
+  inc hl
+  rr (hl)
+  inc hl
+  rr (hl)
+  inc hl
+  rr (hl)
+  dec hl
+  dec hl
+  dec hl
+  dec hl
+  djnz .rotate
+.norotate:
+  ; Now copy (OR) linebuffer to drawing buffer
+  ; Copy 8 bytes, reset drawing buffer pointer, copy 4 more bytes (wraparound)
+  ; TODO: No real need to copy entire linebuffer; only 5 bytes should have to be copied
+  pop de
+  ld hl,linebuffer
+  ld b,8
+.lb_copy1:
+  ld a,(de)
+  or (hl)
+  ld (de),a
+  inc de
+  inc hl
+  djnz .lb_copy1
+  ; TODO: Faster to do 8 dec de probably
+  ld hl,-8
+  add hl,de
+  ex de,hl
+  ld hl,linebuffer+8
+  ld b,4
+.lb_copy2:
+  ld a,(de)
+  or (hl)
+  ld (de),a
+  inc de
+  inc hl
+  djnz .lb_copy2
+
+  inc de
+  inc de
+  inc de
+  inc de
+  ; DE -> next line in drawing buffer
+  ld hl,gfxbufferend
+  call DCOMPR
+  jr nz,.cont
+  ld de,gfxbuffer ; wraparound
+.cont:
+  pop hl
+  inc hl
+  inc hl
+  inc hl
+  inc hl
+  ; HL -> next line in figure
+  pop bc
+  ; B = rows left
+  djnz .processrow
+  ret
+
+
+clearlinebuffer:
+  push bc
+  push hl
+  ld hl,linebuffer
+  xor a
+  ld b,12
+.ctb_loop:
+  ld (hl),a
+  inc hl
+  djnz .ctb_loop
+  pop hl
+  pop bc
+  ret
+
+linebuffer:
+  ds 12
 
 drawbuffer:
   ; B = rotation frame (lower 4 bits will be used)
@@ -108,7 +264,7 @@ clearbuffer:
   inc hl
   ld (hl),a
   inc hl
-  jr nz,.cb_loop
+  djnz .cb_loop
   pop hl
   pop bc
   ret
@@ -258,9 +414,11 @@ set_vdp_write_addr:
   ei
   ret
 
+; TODO: Move this to temporary area
 gfxbuffer:
   ; buffer for 8x8 character tiles, each 8 bytes
   ds 8*8*8
+gfxbufferend:
 
 gfx:
   incbin "squares.bin"

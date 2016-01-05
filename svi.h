@@ -7,6 +7,7 @@ VDP_CR:  equ 0x85
 
 INITXT:  equ 0x0047  ; MODE 1
 INIGRP:  equ 0x004A  ; MODE 2
+DCOMPR:  equ 0x0020  ; Compare DE and HL
 
 CHSNS:   equ 0x003B  ; Tests the status of the keyboard buffer, set Z if no key
 CHGET:   equ 0x003E  ; One character input (waiting), output in A
