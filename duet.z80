@@ -27,8 +27,8 @@ start:
 test_static:
   ld b,0
   ld c,3
-  ld d,50
-  ld e,1
+  ld d,0
+  ld e,0
   call drawfigurexy
 
   ld b,0
@@ -68,7 +68,6 @@ main_bg_loop:
   ld c,3
   push de
   call drawfigurexy
-  ;call drawbuffer
   pop de
   pop hl
   pop bc
@@ -86,16 +85,10 @@ main_bg_loop:
   jr z,.mainloop
   ret
 
-merge_jp_lookup:
-  dw .merge_nowrap, .merge_nowrap, .merge_nowrap, .merge_nowrap
-  dw .merge_nowrap1, .merge_nowrap2, .merge_nowrap3, .merge_nowrap4
-
 drawfigurexy:
   ; B = rotation frame (lower 4 bits will be used)
   ; C = size (0-3)
   ; D,E = x,y coordinates in drawing buffer
-
-  ; TODO - optimze empty rows?
 
   ; Ensure coordinates are 0 <= x,y < 64
   ld a,d
@@ -105,29 +98,12 @@ drawfigurexy:
   and 63
   ld e,a
 
-  ; setup how to copy the bytes after they have been rotated
-  ; depending on x position, due to the wrap-around, we need to alter how we copy
-
-  push de
-  ld l,d
-  sra l
-  sra l
-  res 0,l
-  ld h,0
-  ld de,merge_jp_lookup
-  add hl,de
-  ld a,(hl)
-  inc hl
-  ld h,(hl)
-  ld l,a
-  ld (.mergeplaceholder+1),hl
-  pop de
-
   call get_figure_ptr
   ; now HL -> figure to draw
   ld a,d
   ex de,hl
   ld h,0 ; HL is now y coordinate in buffer to draw to
+  add hl,hl
   add hl,hl
   add hl,hl
   add hl,hl
@@ -158,10 +134,7 @@ drawfigurexy:
   push hl
   push de
 
-  ld a,c
-  and 7
-  ld b,a ; B = number of times to rotate
-  ; TODO - if B > 3, rotate left
+  ld b,c ; B = number of times to rotate
   ld c,(hl)
   inc hl
   ld d,(hl)
@@ -170,159 +143,87 @@ drawfigurexy:
   inc hl
   ld h,(hl)
   ld l,0
-  jr z,.norotatefast
-.rotatefast:
+  ld a,c
+  or d
+  or e
+  or h
+  jr z,.rowdone ; empty row in figure, skip it
+
+  ld a,b
+  and 7
+  jr z,.rotationdone
+  ld b,a
+  ; If we need to rotate 5,6 or 7 times, prefer rotate 3, 2, 1 times the other way instead
+  cp 5
+  jr nc,.setuprotateleft
+.rotateright:
   srl c
   rr d
   rr e
   rr h
   rr l
-  djnz .rotatefast
-.norotatefast:
+  djnz .rotateright
+  jr .rotationdone
+.setuprotateleft:
+  ld a,8
+  sub b
+  ld b,a
+  ; Shift the data
+  ld l,h
+  ld h,e
+  ld e,d
+  ld d,c
+  ld c,0
+.rotateleft:
+  sla l
+  rl h
+  rl e
+  rl d
+  rl c
+  djnz .rotateleft
+
+.rotationdone:
+  ; Data is now correctly rotated in BCDHL
   ld a,c
   ld c,l
   ld b,h
   pop hl
   push hl
-  ; ADEBC should now be OR:ed with HL..HL+4, but with wraparound
-  ; The number of bytes that needs to wrap has been precalculated
-
-  ; First byte is done already here
+  ; ADEBC should now be OR:ed with HL..HL+4
+  ; Because of the way the drawing buffer is aligned, we can do some
+  ; tricks to make the wraparound to work fast
   or (hl)
   ld (hl),a
-
-.mergeplaceholder:
-  jp 0 ; Will be replaced with .merge_nowrap, .merge_wrap1, etc
-
-.merge_nowrap:
-  inc hl
+  inc l
+  res 3,l
   ld a,(hl)
   or d
   ld (hl),a
-  inc hl
+  inc l
+  res 3,l
   ld a,(hl)
   or e
   ld (hl),a
-  inc hl
+  inc l
+  res 3,l
   ld a,(hl)
   or b
   ld (hl),a
-  inc hl
+  inc l
+  res 3,l
   ld a,(hl)
   or c
   ld (hl),a
-  jp .mergedone
-
-.merge_nowrap1:
-  inc hl
-  ld a,(hl)
-  or d
-  ld (hl),a
-  inc hl
-  ld a,(hl)
-  or e
-  ld (hl),a
-  inc hl
-  ld a,(hl)
-  or b
-  ld (hl),a
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  ld a,(hl)
-  or c
-  ld (hl),a
-  jp .mergedone
-
-.merge_nowrap2:
-  inc hl
-  ld a,(hl)
-  or d
-  ld (hl),a
-  inc hl
-  ld a,(hl)
-  or e
-  ld (hl),a
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  ld a,(hl)
-  or b
-  ld (hl),a
-  inc hl
-  ld a,(hl)
-  or c
-  ld (hl),a
-  jp .mergedone
-
-.merge_nowrap3:
-  inc hl
-  ld a,(hl)
-  or d
-  ld (hl),a
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  ld a,(hl)
-  or e
-  ld (hl),a
-  inc hl
-  ld a,(hl)
-  or b
-  ld (hl),a
-  inc hl
-  ld a,(hl)
-  or c
-  ld (hl),a
-  jp .mergedone
-
-.merge_nowrap4:
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  dec hl
-  ld a,(hl)
-  or d
-  ld (hl),a
-  inc hl
-  ld a,(hl)
-  or e
-  ld (hl),a
-  inc hl
-  ld a,(hl)
-  or b
-  ld (hl),a
-  inc hl
-  ld a,(hl)
-  or c
-  ld (hl),a
-  jp .mergedone
-
-.mergedone:
+.rowdone:
   pop de
-  ld hl,8
+  ld hl,16
   add hl,de
   ex de,hl
   ; DE -> next line in drawing buffer
   ld hl,gfxbufferend
   call compare_de_hl
   jr c,.cont
-  ld hl,-512
+  ld hl,-1024
   add hl,de
   ex de,hl
 .cont:
@@ -334,8 +235,7 @@ drawfigurexy:
   ; HL -> next line in figure
   pop bc
   ; B = rows left
-  dec b ; TODO change back to djnz if possible
-  jp nz,.processrow
+  djnz .processrow
   ret
 
 ; Z will be set if DE=HL, C set if DE<HL
@@ -346,9 +246,6 @@ compare_de_hl:
   ld a,e
   cp l
   ret
-
-linebuffer:
-  ds 5
 
 drawbuffer:
   ; B = rotation frame (lower 4 bits will be used)
@@ -374,18 +271,34 @@ drawbuffer:
 
 clearbuffer:
   push bc
+  push de
   push hl
   ld hl,gfxbuffer
-  ; clear 8x8x8 = 512 bytes
-  ld b,0
+  ld de,9
+  ; Clear 64 rows
+  ld b,64
   xor a
 .cb_loop:
+  ; Clear 8 bytes, then skip 8 bytes
   ld (hl),a
-  inc hl
+  inc l
   ld (hl),a
-  inc hl
+  inc l
+  ld (hl),a
+  inc l
+  ld (hl),a
+  inc l
+  ld (hl),a
+  inc l
+  ld (hl),a
+  inc l
+  ld (hl),a
+  inc l
+  ld (hl),a
+  add hl,de
   djnz .cb_loop
   pop hl
+  pop de
   pop bc
   ret
 
@@ -401,7 +314,7 @@ flushbuffer:
 .fb2_nextrow:
   ld b,64 ; 64 bytes to write per row
 .fb2_nexttile:
-  ld de,7 ; 1 is added automatically after every outi
+  ld de,15 ; 1 is added automatically after every outi
   push hl
   outi
   add hl,de
@@ -421,7 +334,7 @@ flushbuffer:
   pop hl
   inc hl
   jr nz, .fb2_nexttile ; flag was set from last outi
-  ld de,7*8
+  ld de,7*16+8
   add hl,de
   dec a
   jr nz,.fb2_nextrow
@@ -540,8 +453,12 @@ gfx:
 size_wave:
   db 3,3,3,3,3,3,3,3,3,3,3,2,1,0,1,2,3,3,3,3,-1
 
+; The drawing buffer is 64x64 pixel in size
+; Every row is 16 bytes:
+;  * The first 8 bytes correspond to the 64 pixels
+;  * Then their are 8 empty bytes, to make wraparound easier
 gfxbuffer:    equ start-0x1000 ;8*8*8
-gfxbufferend: equ gfxbuffer+8*8*8
+gfxbufferend: equ gfxbuffer+2*8*8*8
 
 end:
 
