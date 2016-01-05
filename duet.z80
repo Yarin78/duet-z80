@@ -27,7 +27,7 @@ start:
 test_static:
   ld b,0
   ld c,3
-  ld d,80
+  ld d,50
   ld e,1
   call drawfigurexy
 
@@ -65,6 +65,7 @@ main_bg_loop:
   push bc
   push hl
   ld c,(hl)
+  ld c,3
   push de
   call drawfigurexy
   ;call drawbuffer
@@ -79,16 +80,22 @@ main_bg_loop:
 .skip:
   call flushbuffer
   inc d
-  inc e
+  ;inc e
 
   call CHSNS
   jr z,.mainloop
   ret
 
+merge_jp_lookup:
+  dw .merge_nowrap, .merge_nowrap, .merge_nowrap, .merge_nowrap
+  dw .merge_nowrap1, .merge_nowrap2, .merge_nowrap3, .merge_nowrap4
+
 drawfigurexy:
   ; B = rotation frame (lower 4 bits will be used)
   ; C = size (0-3)
   ; D,E = x,y coordinates in drawing buffer
+
+  ; TODO - optimze empty rows?
 
   ; Ensure coordinates are 0 <= x,y < 64
   ld a,d
@@ -98,25 +105,22 @@ drawfigurexy:
   and 63
   ld e,a
 
-  ; setup how to copy bytes from line buffer to drawing buffer
-  ; we need to copy Z bytes, then wrap around, then copy 5-Z bytes
-  ; where Z is math.max(8-X/8, 5)
+  ; setup how to copy the bytes after they have been rotated
+  ; depending on x position, due to the wrap-around, we need to alter how we copy
 
   push de
-  sra d
-  sra d
-  sra d
-  ld a,8
-  sub d
-  cp 5
-  jr c,.xwrap
-  ld a,5
-.xwrap:
-  ld (.bytes_to_copy1+1),a
-  ld d,a
-  ld a,5
-  sub d
-  ld (.bytes_to_copy2+1),a
+  ld l,d
+  sra l
+  sra l
+  res 0,l
+  ld h,0
+  ld de,merge_jp_lookup
+  add hl,de
+  ld a,(hl)
+  inc hl
+  ld h,(hl)
+  ld l,a
+  ld (.mergeplaceholder+1),hl
   pop de
 
   call get_figure_ptr
@@ -175,56 +179,141 @@ drawfigurexy:
   rr l
   djnz .rotatefast
 .norotatefast:
-  ld a,l
+  ld a,c
+  ld c,l
   ld b,h
-  ld hl,linebuffer+4
+  pop hl
+  push hl
+  ; ADEBC should now be OR:ed with HL..HL+4, but with wraparound
+  ; The number of bytes that needs to wrap has been precalculated
+
+  ; First byte is done already here
+  or (hl)
+  ld (hl),a
+
+.mergeplaceholder:
+  jp 0 ; Will be replaced with .merge_nowrap, .merge_wrap1, etc
+
+.merge_nowrap:
+  inc hl
+  ld a,(hl)
+  or d
+  ld (hl),a
+  inc hl
+  ld a,(hl)
+  or e
+  ld (hl),a
+  inc hl
+  ld a,(hl)
+  or b
+  ld (hl),a
+  inc hl
+  ld a,(hl)
+  or c
+  ld (hl),a
+  jp .mergedone
+
+.merge_nowrap1:
+  inc hl
+  ld a,(hl)
+  or d
+  ld (hl),a
+  inc hl
+  ld a,(hl)
+  or e
+  ld (hl),a
+  inc hl
+  ld a,(hl)
+  or b
   ld (hl),a
   dec hl
-  ld (hl),b
   dec hl
-  ld (hl),e
   dec hl
-  ld (hl),d
   dec hl
-  ld (hl),c
+  dec hl
+  dec hl
+  dec hl
+  ld a,(hl)
+  or c
+  ld (hl),a
+  jp .mergedone
 
-  ; Now copy (OR) linebuffer to drawing buffer
-  ; We always copy 5 bytes, but at some point we need to reset
-  ; pointer in drawing buffer to the beginning of the line
-  pop de
-  push de
-  ld hl,linebuffer
-.bytes_to_copy1:
-  ld b,8 ; this value is modified by code earlier
-.lb_copy1:
-  ld a,(de)
-  or (hl)
-  ld (de),a
-  inc de
+.merge_nowrap2:
   inc hl
-  djnz .lb_copy1
-.bytes_to_copy2:
-  ld a,4 ; this value is modified by code earlier
-  or a
-  jr z,.lb_skipcopy2
-  ld b,a
-  dec de
-  dec de
-  dec de
-  dec de
-  dec de
-  dec de
-  dec de
-  dec de
-.lb_copy2:
-  ld a,(de)
-  or (hl)
-  ld (de),a
-  inc de
+  ld a,(hl)
+  or d
+  ld (hl),a
   inc hl
-  djnz .lb_copy2
-.lb_skipcopy2:
+  ld a,(hl)
+  or e
+  ld (hl),a
+  dec hl
+  dec hl
+  dec hl
+  dec hl
+  dec hl
+  dec hl
+  dec hl
+  ld a,(hl)
+  or b
+  ld (hl),a
+  inc hl
+  ld a,(hl)
+  or c
+  ld (hl),a
+  jp .mergedone
 
+.merge_nowrap3:
+  inc hl
+  ld a,(hl)
+  or d
+  ld (hl),a
+  dec hl
+  dec hl
+  dec hl
+  dec hl
+  dec hl
+  dec hl
+  dec hl
+  ld a,(hl)
+  or e
+  ld (hl),a
+  inc hl
+  ld a,(hl)
+  or b
+  ld (hl),a
+  inc hl
+  ld a,(hl)
+  or c
+  ld (hl),a
+  jp .mergedone
+
+.merge_nowrap4:
+  dec hl
+  dec hl
+  dec hl
+  dec hl
+  dec hl
+  dec hl
+  dec hl
+  ld a,(hl)
+  or d
+  ld (hl),a
+  inc hl
+  ld a,(hl)
+  or e
+  ld (hl),a
+  inc hl
+  ld a,(hl)
+  or b
+  ld (hl),a
+  inc hl
+  ld a,(hl)
+  or c
+  ld (hl),a
+  jp .mergedone
+
+.mergedone:
   pop de
   ld hl,8
   add hl,de
