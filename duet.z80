@@ -153,25 +153,23 @@ drawfigurexy:
   push bc
   push hl
   push de
-  xor a
-  ld (linebuffer+4),a
 
   push bc
   ld de,linebuffer
-  ; DE -> linebuffer+x/8
   ; HL -> current position in figure
-  push de
   ldi
   ldi
   ldi
   ldi
-  pop hl
+  xor a
+  ld (de),a
   pop bc
   ; C = x coordinate
   ld a,c
   and 7
   jr z,.norotate
   ld b,a
+  ld hl,linebuffer
   ; Figure row is now in linebuffer
   ; Now we rotate it to the right place
   ; rotate (hl), (hl+1), ..., (hl+4) B bits
