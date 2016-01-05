@@ -1,0 +1,20 @@
+Prerequisites
+-------------
+* z80asm (brew install z80asm)
+* openMSX
+* loadbinary.tcl (cp loadbinary.tcl /Applications/openMSX.app/share/scripts/)
+
+Compile
+-------
+z80asm duet.z80 -o duet.bin
+
+Package in SVI tape
+-------------------
+svitools -b duet.bin -o duet.cas
+
+Run
+---
+Cmd-L in openMSX to open console
+
+loadbinary 0xA000 /Users/yarin/src/duet-msx/duet.bin
+defusr=&HA000:a=usr(0)

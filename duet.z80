@@ -1,0 +1,337 @@
+; VDP manual: http://bifi.msxnet.org/msxnet/tech/tms9918a.txt
+; More on VDP and speed limits: http://map.grauw.nl/articles/vdp_tut.php
+
+include "msx.h"
+;include "svi.h"
+
+  ; Header values for svitool to package it in a tape container
+;  dw  start, end-1, start
+
+  org 0xA000
+
+start:
+  call INIGRP
+
+  call set_single_pattern_table
+  call set_pattern_name_table
+  call set_color_palette
+
+  call main_bg_loop
+  ;call test_static
+
+  call CHGET ; clear keyboard buffer
+  call INITXT
+  ret
+
+test_static:
+  ld b,0
+  ld c,3
+  ld de,gfxbuffer+0x0000
+  call drawbuffer2
+
+  ld b,5
+  ld c,1
+  ld de,gfxbuffer+4
+  call drawbuffer2
+
+  ld b,5
+  ld c,1
+  ld de,gfxbuffer+256
+  call drawbuffer2
+
+  ld b,7
+  ld c,2
+  ld de,gfxbuffer+256+4
+  call drawbuffer2
+
+  call flushbuffer2
+  ret
+
+main_bg_loop:
+  ld b,0
+  ld hl,size_wave
+.mainloop:
+  call clearbuffer
+  halt
+  halt
+  push bc
+  push hl
+  ld c,(hl)
+  ld de,gfxbuffer
+  call drawbuffer2
+  pop hl
+  pop bc
+  inc b
+  inc hl
+  bit 7,(hl)
+  jr z,.skip
+  ld hl,size_wave
+.skip:
+  call flushbuffer2
+
+  call CHSNS
+  jr z,.mainloop
+  ret
+
+drawbuffer:
+  ; B = rotation frame (lower 4 bits will be used)
+  ; C = size (0-3)
+  ; DE = position in drawing buffer
+  call get_figure_ptr
+
+  ld b,4
+.dbloop:
+  push bc
+  ld bc,32
+  ldir
+  ex de,hl
+  ld bc,4*8
+  add hl,bc
+  ex de,hl
+  pop bc
+  djnz .dbloop
+
+  ret
+
+drawbuffer2:
+  ; B = rotation frame (lower 4 bits will be used)
+  ; C = size (0-3)
+  ; DE = position in drawing buffer
+  call get_figure_ptr
+
+  ld b,32
+.db2loop:
+  push bc
+  ldi
+  ldi
+  ldi
+  ldi
+  inc de
+  inc de
+  inc de
+  inc de
+  pop bc
+  djnz .db2loop
+
+  ret
+
+clearbuffer:
+  push bc
+  push hl
+  ld hl,gfxbuffer
+  ; clear 8x8x8 = 512 bytes
+  ld b,0
+  xor a
+.cb_loop:
+  ld (hl),a
+  inc hl
+  ld (hl),a
+  inc hl
+  jr nz,.cb_loop
+  pop hl
+  pop bc
+  ret
+
+flushbuffer:
+  push bc
+  push de
+  push hl
+  ld hl,0x0000
+  call set_vdp_write_addr
+  ld hl,gfxbuffer
+  ; copy 8x8x8 = 512 bytes
+  ld d,2
+  ld b,0
+  ld c,VDP_DW
+.fb_loop:
+  outi
+  jr nz,.fb_loop
+  dec d
+  jr nz,.fb_loop
+  pop hl
+  pop de
+  pop bc
+  ret
+
+flushbuffer2:
+  push bc
+  push de
+  push hl
+  ld hl,0x0000
+  call set_vdp_write_addr
+  ld hl,gfxbuffer
+  ld c,VDP_DW
+  ld a,8 ; 8 rows
+.fb2_nextrow:
+  ld b,64 ; 64 bytes to write per row
+.fb2_nexttile:
+  ld de,7 ; 1 is added automatically after every outi
+  push hl
+  outi
+  add hl,de
+  outi
+  add hl,de
+  outi
+  add hl,de
+  outi
+  add hl,de
+  outi
+  add hl,de
+  outi
+  add hl,de
+  outi
+  add hl,de
+  outi
+  pop hl
+  inc hl
+  jr nz, .fb2_nexttile ; flag was set from last outi
+  ld de,7*8
+  add hl,de
+  dec a
+  jr nz,.fb2_nextrow
+  pop hl
+  pop de
+  pop bc
+  ret
+
+draw:
+  ; B = rotation frame (lower 4 bits will be used)
+  ; C = size (0-3)
+  ; DE = vram address of first character pattern
+  call get_figure_ptr
+  ex de,hl
+
+  ld b,4
+.dloop:
+  push bc
+  call set_vdp_write_addr
+  ex de,hl
+  call draw_tile
+  call draw_tile
+  call draw_tile
+  call draw_tile
+  ex de,hl
+  ld bc,8*8
+  add hl,bc
+  pop bc
+  djnz .dloop
+
+  ret
+
+get_figure_ptr:
+  ; B = rotation frame (lower 4 bits will be used)
+  ; C = size (0-3)
+
+  ; gfx start at gfx+(c*16+b)*128
+  ld l,c
+  ld h,0
+  add hl,hl
+  add hl,hl
+  add hl,hl
+  add hl,hl ; HL = C*16
+  ld a,b
+  and 15
+  ld c,a
+  ld b,0
+  add hl,bc ; HL = C*16+B
+  add hl,hl
+  add hl,hl
+  add hl,hl
+  add hl,hl
+  add hl,hl
+  add hl,hl
+  add hl,hl ; HL = (C*16+B)*128
+  ld bc,gfx
+  add hl,bc
+  ret
+
+draw_tile:
+  ld b,8
+  ld c,VDP_DW
+.dt_loop:
+  outi
+  jr nz,.dt_loop
+  ret
+
+set_single_pattern_table:
+  ; Sets all three parts of the screen to use the same pattern table
+  di
+  ld a,0
+  out (VDP_CW),a
+  ld a,128+4
+  out (VDP_CW),a
+
+  ld a,128+31
+  out (VDP_CW),a
+  ld a,128+3
+  out (VDP_CW),a
+  ei
+  ret
+
+set_color_palette:
+  ; Sets foreground to white, background to black for the 256 chars used
+  ld hl,0x2000
+  call set_vdp_write_addr
+  ld d,8
+  ld b,0
+  ld a,0xE1 ; FG=gray BG=black
+.scp_loop:
+  out (VDP_DW),a
+  djnz .scp_loop
+  dec d
+  jr nz,.scp_loop
+  ret
+
+set_pattern_name_table:
+  ; Creates an 8x8 matrix of characters 0-63 and repeats it 4x3 over the screen
+  ld hl,0x1800
+  call set_vdp_write_addr
+  ; 01234567012345670123456701234567
+  ; 89ABCDEF89ABCDEF89ABCDEF89ABCDEF
+  ; etc
+  ld d,0 ; row offset
+  ld e,24 ; rows left
+.spnt_loop2:
+  ld c,0 ; col offset
+  ld b,32 ; cols left
+.spnt_loop1:
+  ld a,c
+  add a,d
+  out (VDP_DW),a
+  inc c
+  res 3,c
+  djnz .spnt_loop1
+  ld a,8
+  add a,d
+  and 63
+  ld d,a
+  dec e
+  jr nz,.spnt_loop2
+  ret
+
+; Sets the VDP address registers to HL and prepares for writing
+; C will be equal to VDP_DW
+set_vdp_write_addr:
+  ld c,VDP_CW
+  set 6,h
+  di
+  ld a,l
+  out (VDP_CW),a
+  ld a,h
+  out (VDP_CW),a
+  ei
+  ret
+
+gfxbuffer:
+  ; buffer for 8x8 character tiles, each 8 bytes
+  ds 8*8*8
+
+gfx:
+  incbin "squares.bin"
+
+size_wave:
+  db 3,3,3,3,3,3,3,3,3,3,3,2,1,0,1,2,3,3,3,3,-1
+
+end:
+
+  end
