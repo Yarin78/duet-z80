@@ -1,8 +1,8 @@
 ; VDP manual: http://bifi.msxnet.org/msxnet/tech/tms9918a.txt
 ; More on VDP and speed limits: http://map.grauw.nl/articles/vdp_tut.php
 
-include "msx.h"
-;include "svi.h"
+;include "msx.h"
+include "svi.h"
 
   ; Header values for svitool to package it in a tape container
 ;  dw  start, end-1, start
@@ -52,40 +52,146 @@ test_static:
   call flushbuffer
   ret
 
-main_bg_loop:
-  ld b,0
-  ld hl,size_wave
-  ld d,6
-  ld e,0
 
-.mainloop:
+main_bg_loop:
+  halt
+
+  ; Change backdrop for performance markers
+  ;ld a,2
+  ;out (VDP_CW),a
+  ;ld a,128+7
+  ;out (VDP_CW),a
+  call .update_background
+  ;ld a,8
+  ;out (VDP_CW),a
+  ;ld a,128+7
+  ;out (VDP_CW),a
+  call CHSNS
+  jr z,main_bg_loop
+  ret
+
+framestate:
+  db 0, 14  ; rotation frames
+  dw rotation_wave
+  dw (rotation_wave_end-rotation_wave)/2+rotation_wave
+  db 0 ; angle
+
+.update_background:
   call clearbuffer
   ;halt
   ;halt
-  push bc
-  push hl
-  ld c,(hl)
-  ld c,3
-  push de
-  call drawfigurexy
-  pop de
-  pop hl
-  pop bc
-  inc b
-  inc hl
-  bit 7,(hl)
-  jr z,.skip
-  ld hl,size_wave
-.skip:
-  call flushbuffer
-  inc d
-  ;inc e
 
-  call CHSNS
-  jr z,.mainloop
+  ld a,(framestate+6)
+  ;and 127
+  ld l,a
+  ld h,0
+  add hl,hl
+  ld de,sintable
+  add hl,de
+  ld l,(hl)
+
+  push hl
+  ld a,(framestate+6)
+  add a,64
+  ;and 127
+  ld l,a
+  ld h,0
+  add hl,hl
+  ld de,sintable
+  add hl,de
+  ld a,(hl)
+  pop hl
+  ld h,a
+
+
+
+
+  ld a,(framestate)
+  ld b,a
+  ld c,3
+  ld de,0x0000
+  ld a,l
+  add d
+  ld d,a
+  ld a,h
+  add e
+  ld e,a
+  call drawfigurexy
+
+  ld a,(framestate+1)
+  ld b,a
+  ld c,1
+  ld de,0x2004
+  ld a,l
+  add d
+  ld d,a
+  ld a,h
+  add e
+  ld e,a
+  call drawfigurexy
+
+  ld a,(framestate+1)
+  ld b,a
+  ld c,1
+  ld de,0x0424
+  ld a,l
+  add d
+  ld d,a
+  ld a,h
+  add e
+  ld e,a
+  call drawfigurexy
+
+  ld a,(framestate)
+  ld b,a
+  ld c,0
+  ld de,0x2424
+  ld a,l
+  add d
+  ld d,a
+  ld a,h
+  add e
+  ld e,a
+  call drawfigurexy
+
+  ld de,(framestate+2)
+  ld hl,framestate
+  ld a,(de)
+  add a,(hl)
+  ld (hl),a
+  inc de
+  ld hl,rotation_wave_end
+  call compare_de_hl
+  jr nz,.ub_nowrap1
+  ld de,rotation_wave
+.ub_nowrap1:
+  ld (framestate+2),de
+
+  ld de,(framestate+4)
+  ld hl,framestate+1
+  ld a,(de)
+  neg
+  add a,(hl)
+  ld (hl),a
+  inc de
+  ld hl,rotation_wave_end
+  call compare_de_hl
+  jr nz,.ub_nowrap2
+  ld de,rotation_wave
+.ub_nowrap2:
+  ld (framestate+4),de
+
+  ld a,(framestate+6)
+  inc a
+  ld (framestate+6),a
+
+  call flushbuffer
   ret
 
 drawfigurexy:
+  push bc
+  push de
+  push hl
   ; B = rotation frame (lower 4 bits will be used)
   ; C = size (0-3)
   ; D,E = x,y coordinates in drawing buffer
@@ -236,6 +342,9 @@ drawfigurexy:
   pop bc
   ; B = rows left
   djnz .processrow
+  pop hl
+  pop de
+  pop bc
   ret
 
 ; Z will be set if DE=HL, C set if DE<HL
@@ -344,18 +453,19 @@ flushbuffer:
   ret
 
 get_figure_ptr:
-  ; B = rotation frame (lower 4 bits will be used)
+  ; B = rotation frame (lower 5 bits will be used)
   ; C = size (0-3)
 
-  ; gfx start at gfx+(c*16+b)*128
+  ; gfx start at gfx+(c*32+b)*128
   ld l,c
   ld h,0
   add hl,hl
   add hl,hl
   add hl,hl
-  add hl,hl ; HL = C*16
+  add hl,hl
+  add hl,hl ; HL = C*32
   ld a,b
-  and 15
+  and 31
   ld c,a
   ld b,0
   add hl,bc ; HL = C*16+B
@@ -394,12 +504,18 @@ set_single_pattern_table:
   ret
 
 set_color_palette:
+  ; Set backdrop to blue
+  ld a,4
+  out (VDP_CW),a
+  ld a,128+7
+  out (VDP_CW),a
+
   ; Sets foreground to white, background to black for the 256 chars used
   ld hl,0x2000
   call set_vdp_write_addr
   ld d,8
   ld b,0
-  ld a,0xE1 ; FG=gray BG=black
+  ld a,0x54 ; FG=gray BG=black
 .scp_loop:
   out (VDP_DW),a
   djnz .scp_loop
@@ -450,8 +566,16 @@ set_vdp_write_addr:
 gfx:
   incbin "squares.bin"
 
-size_wave:
-  db 3,3,3,3,3,3,3,3,3,3,3,2,1,0,1,2,3,3,3,3,-1
+rotation_wave:
+  db 1,3,4,5,5,5,4,3,1
+  db 0,0,0,0,0,0,0,0,0
+  db 0,0,0,0,0,0,0,0,0
+  db 0,0,0,0,0,0,0,0,0
+rotation_wave_end:
+  db -1
+
+sintable:
+  incbin "sin.bin"
 
 ; The drawing buffer is 64x64 pixel in size
 ; Every row is 16 bytes:

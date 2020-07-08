@@ -16,5 +16,5 @@ Run
 ---
 Cmd-L in openMSX to open console
 
-loadbinary 0xA000 /Users/yarin/src/duet-msx/duet.bin
+load_debuggable Main\ RAM\ 1 duet.bin 0x2000
 defusr=&HA000:a=usr(0)

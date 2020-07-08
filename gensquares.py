@@ -76,7 +76,7 @@ def output_raw(f, bitmap):
             output.append(val)
     f.write(bytearray(output))
 
-ROT_FRAMES = 16
+ROT_FRAMES = 32
 SIZES = [0.6, 0.7, 0.8, 0.9]
 
 
